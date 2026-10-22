@@ -1,0 +1,297 @@
+import React, { useState } from 'react';
+import { X, Trash2, ShoppingBag, ArrowRight, Tag, ShieldCheck, Truck } from 'lucide-react';
+import { CartItem, Coupon } from '../types';
+import { STORE_SETTINGS, VALID_COUPONS } from '../data/mockData';
+import { TRANSLATIONS, getProductTitle } from '../utils/translations';
+
+interface CartDrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cartItems: CartItem[];
+  onUpdateQuantity: (id: string, qty: number) => void;
+  onRemoveItem: (id: string) => void;
+  onProceedToCheckout: () => void;
+  appliedCoupon: Coupon | null;
+  onApplyCoupon: (coupon: Coupon | null) => void;
+  coupons?: Coupon[];
+  lang?: 'en' | 'bn';
+}
+
+export const CartDrawer: React.FC<CartDrawerProps> = ({
+  isOpen,
+  onClose,
+  cartItems,
+  onUpdateQuantity,
+  onRemoveItem,
+  onProceedToCheckout,
+  appliedCoupon,
+  onApplyCoupon,
+  coupons = VALID_COUPONS,
+  lang = 'bn'
+}) => {
+  const t = TRANSLATIONS[lang];
+  const [couponInput, setCouponInput] = useState('');
+  const [couponError, setCouponError] = useState('');
+  const [couponSuccess, setCouponSuccess] = useState('');
+
+  if (!isOpen) return null;
+
+  const subtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  
+  // Calculate discount
+  let discountAmount = 0;
+  if (appliedCoupon) {
+    if (appliedCoupon.discountType === 'percentage') {
+      discountAmount = Math.round((subtotal * appliedCoupon.amount) / 100);
+    } else {
+      discountAmount = appliedCoupon.amount;
+    }
+  }
+
+  const freeShippingThreshold = STORE_SETTINGS.freeDeliveryThreshold;
+  const freeShippingNeeded = Math.max(0, freeShippingThreshold - subtotal);
+  const freeShippingProgress = Math.min(100, Math.round((subtotal / freeShippingThreshold) * 100));
+
+  const handleApplyCoupon = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCouponError('');
+    setCouponSuccess('');
+
+    const searchList = coupons && coupons.length > 0 ? coupons : VALID_COUPONS;
+    const matched = searchList.find(c => c.code.toUpperCase() === couponInput.trim().toUpperCase());
+    if (!matched) {
+      setCouponError(lang === 'en' ? 'Invalid coupon code' : 'অবৈধ কুপন কোড (Invalid coupon code)');
+      return;
+    }
+
+    const todayIso = new Date().toISOString().split('T')[0];
+    if (matched.status === 'expired' || (matched.expiryDate && matched.expiryDate < todayIso)) {
+      setCouponError(lang === 'en' ? `Coupon '${matched.code}' has expired` : `কুপন '${matched.code}' এর মেয়াদ উত্তীর্ণ হয়ে গেছে (Coupon has expired)`);
+      return;
+    }
+
+    if (subtotal < matched.minSpend) {
+      setCouponError(
+        lang === 'en'
+          ? `Minimum order of ৳${matched.minSpend.toLocaleString()} required for this coupon`
+          : `এই কুপনটি ব্যবহার করতে ন্যূনতম ৳${matched.minSpend.toLocaleString()} টাকার অর্ডার প্রয়োজন`
+      );
+      return;
+    }
+
+    onApplyCoupon(matched);
+    setCouponSuccess(
+      lang === 'en'
+        ? `Coupon '${matched.code}' applied successfully!`
+        : `কুপন '${matched.code}' সফলভাবে প্রয়োগ করা হয়েছে!`
+    );
+    setCouponInput('');
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-xs flex justify-end">
+      <div
+        className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between animate-in slide-in-from-right duration-300"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="p-4 border-b border-emerald-900/40 flex items-center justify-between bg-[#042013] text-white">
+          <div className="flex items-center gap-2">
+            <ShoppingBag className="w-5 h-5 text-amber-300" />
+            <h2 className="text-sm font-bold tracking-wide">
+              {t.yourCart} ({cartItems.length} {t.itemsInCart})
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-full hover:bg-emerald-900/60 text-emerald-200 hover:text-white transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Free Shipping Progress bar */}
+        <div className="p-3.5 bg-emerald-50 border-b border-emerald-100">
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="font-semibold text-emerald-900 flex items-center gap-1">
+              <Truck className="w-3.5 h-3.5 text-emerald-700" />
+              {freeShippingNeeded === 0
+                ? (lang === 'en' ? 'Congratulations! You unlocked FREE Delivery!' : 'অভিনন্দন! আপনি পাচ্ছেন ফ্রি হোম ডেলিভারি!')
+                : (lang === 'en'
+                    ? `Add ৳${freeShippingNeeded.toLocaleString()} more for FREE delivery!`
+                    : `আর মাত্র ৳${freeShippingNeeded.toLocaleString()} টাকার শপিং করলেই ফ্রি ডেলিভারি!`)}
+            </span>
+            <span className="font-bold text-emerald-800 font-mono">{freeShippingProgress}%</span>
+          </div>
+          <div className="w-full h-2 bg-emerald-200/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-700 via-[#87CEEB] to-emerald-600 rounded-full transition-all duration-500"
+              style={{ width: `${freeShippingProgress}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Cart Items List */}
+        <div className="flex-1 overflow-y-auto p-4 divide-y divide-gray-100">
+          {cartItems.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-500">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-700 mb-3">
+                <ShoppingBag className="w-8 h-8" />
+              </div>
+              <p className="text-base font-bold text-gray-800">{t.emptyCart}</p>
+              <p className="text-xs text-gray-500 mt-1 max-w-xs">
+                {t.emptyCartSub}
+              </p>
+              <button
+                onClick={onClose}
+                className="mt-4 px-5 py-2.5 rounded-xl bg-[#0c4a28] hover:bg-[#07331c] text-amber-200 text-xs font-bold shadow-md transition-colors cursor-pointer"
+              >
+                {t.startShopping}
+              </button>
+            </div>
+          ) : (
+            cartItems.map((item) => (
+              <div key={item.id} className="py-3 flex gap-3 items-center group">
+                <img
+                  src={item.product.images[0]}
+                  alt={item.product.name}
+                  className="w-16 h-16 rounded-xl object-cover border border-gray-200 bg-gray-50 flex-shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-xs font-bold text-gray-900 truncate">
+                    {getProductTitle(item.product, lang)}
+                  </h4>
+                  {item.selectedColor && (
+                    <p className="text-[11px] text-gray-500">
+                      {lang === 'en' ? 'Color: ' : 'কালার: '}
+                      <span className="font-medium text-gray-700">{item.selectedColor}</span>
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between mt-1.5">
+                    <span className="text-xs font-black text-[#0c4a28]">
+                      ৳{(item.product.price * item.quantity).toLocaleString()}
+                    </span>
+
+                    {/* Quantity controls */}
+                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                      <button
+                        onClick={() => onUpdateQuantity(item.id, Math.max(1, item.quantity - 1))}
+                        className="px-2 py-0.5 text-xs font-bold text-gray-600 hover:bg-gray-200"
+                      >
+                        -
+                      </button>
+                      <span className="px-2.5 text-xs font-bold text-gray-900 font-mono">
+                        {item.quantity}
+                      </span>
+                      <button
+                        onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
+                        className="px-2 py-0.5 text-xs font-bold text-gray-600 hover:bg-gray-200"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Delete item */}
+                    <button
+                      onClick={() => onRemoveItem(item.id)}
+                      className="text-gray-400 hover:text-amber-700 p-1"
+                      title="Remove"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer & Checkout Area */}
+        {cartItems.length > 0 && (
+          <div className="p-4 bg-gray-50 border-t border-gray-200 space-y-3">
+            
+            {/* Coupon Application */}
+            <div>
+              {appliedCoupon ? (
+                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl text-xs">
+                  <div className="flex items-center gap-1.5 text-emerald-800">
+                    <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{lang === 'en' ? 'Coupon: ' : 'কুপন কোড: '}<strong>{appliedCoupon.code}</strong> (-৳{discountAmount})</span>
+                  </div>
+                  <button
+                    onClick={() => onApplyCoupon(null)}
+                    className="text-amber-700 hover:text-amber-900 font-bold"
+                  >
+                    {lang === 'en' ? 'Remove' : 'মুছুন'}
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value)}
+                    placeholder={lang === 'en' ? 'Coupon code' : 'কুপন কোড'}
+                    className="flex-1 px-3 py-1.5 text-xs uppercase bg-white border border-gray-300 rounded-lg outline-none focus:border-emerald-700"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 bg-[#0c4a28] hover:bg-[#07331c] text-amber-200 rounded-lg text-xs font-bold cursor-pointer"
+                  >
+                    {lang === 'en' ? 'Apply' : 'প্রয়োগ'}
+                  </button>
+                </form>
+              )}
+              {couponError && <p className="text-[11px] text-amber-700 mt-1">{couponError}</p>}
+              {couponSuccess && <p className="text-[11px] text-emerald-600 mt-1">{couponSuccess}</p>}
+            </div>
+
+            {/* Price Calculations */}
+            <div className="space-y-1.5 text-xs text-gray-600 border-t border-gray-200 pt-2">
+              <div className="flex justify-between">
+                <span>{t.subtotal}</span>
+                <span className="font-semibold text-gray-900">৳{subtotal.toLocaleString()}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-emerald-600 font-semibold">
+                  <span>{lang === 'en' ? 'Coupon Discount' : 'কুপন ডিসকাউন্ট'}</span>
+                  <span>-৳{discountAmount.toLocaleString()}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-gray-500 text-[11px]">
+                <span>{t.estimatedDelivery}</span>
+                <span>{lang === 'en' ? 'Calculated at checkout' : 'চেকআউট পেজে হিসাব হবে'}</span>
+              </div>
+              <div className="flex justify-between text-sm font-black text-gray-900 pt-1 border-t border-gray-200">
+                <span>{t.total}</span>
+                <span className="text-[#0c4a28] font-mono text-base font-black">৳{(subtotal - discountAmount).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Proceed to Checkout Button */}
+            <button
+              id="cart-checkout-proceed-btn"
+              onClick={() => {
+                onClose();
+                onProceedToCheckout();
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-[#0c4a28] hover:bg-[#07331c] text-amber-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/20 transition-all cursor-pointer"
+            >
+              <span>{t.proceedToCheckout}</span>
+              <ArrowRight className="w-4 h-4 text-amber-300" />
+            </button>
+
+            <p className="text-[10px] text-center text-gray-400 flex items-center justify-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              {lang === 'en'
+                ? '100% Secure Checkout • Cash on Delivery Available'
+                : '১০০% নিরাপদ চেকআউট • ক্যাশ অন ডেলিভারি সুবিধা'}
+            </p>
+
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
